@@ -906,13 +906,13 @@ async function fetchOrderBookREST(coinId){
 
   // Tenta múltiplas fontes em ordem
   const sources=[
-    // 1. Binance direto
+    // 1. Proxy próprio do Vercel (sem CORS!)
+    ()=>fetch(`/api/orderbook?symbol=${sym}`),
+    // 2. Binance direto
     ()=>fetch(`https://api.binance.com/api/v3/depth?symbol=${sym}&limit=100`),
-    // 2. Binance via proxy CORS
+    // 3. corsproxy.io
     ()=>fetch(`https://corsproxy.io/?https://api.binance.com/api/v3/depth?symbol=${sym}&limit=100`),
-    // 3. Binance US
-    ()=>fetch(`https://api.binance.us/api/v3/depth?symbol=${sym}&limit=100`),
-    // 4. AllOrigins proxy
+    // 4. allorigins
     ()=>fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://api.binance.com/api/v3/depth?symbol=${sym}&limit=100`)}`),
   ];
 
