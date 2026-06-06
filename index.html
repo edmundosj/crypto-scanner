@@ -607,7 +607,7 @@ async function fetchAll(){
   }
   try{
     const ids=WATCHLIST.map(c=>c.id).join(",");
-    const url=`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&sparkline=true&price_change_percentage=24h&per_page=50`;
+    const url=`/api/markets?ids=${ids}`;
     const r=await fetch(url);
     if(!r.ok)throw new Error("CoinGecko "+r.status);
     const data=await r.json();
@@ -638,7 +638,7 @@ async function fetchAll(){
   // Chart history
   setTimeout(async()=>{
     try{
-      const r=await fetch(`https://api.coingecko.com/api/v3/coins/${selected}/market_chart?vs_currency=usd&days=3&interval=hourly`);
+      const r=await fetch(`/api/chart?id=${selected}`);
       if(!r.ok)return;
       const data=await r.json();
       if(!data.prices)return;
@@ -657,7 +657,7 @@ async function fetchAll(){
 
 async function fetchTop20(){
   try{
-    const r=await fetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=20&page=1&sparkline=false&price_change_percentage=24h");
+    const r=await fetch("/api/markets?ids=bitcoin,ethereum,tether,binancecoin,solana,ripple,usd-coin,dogecoin,cardano,avalanche-2,shiba-inu,tron,wrapped-bitcoin,chainlink,the-graph,uniswap,litecoin,near,polkadot,internet-computer");
     if(!r.ok)throw new Error();
     top20=(await r.json()).map(m=>({id:m.id,sym:m.symbol.toUpperCase(),name:m.name,price:m.current_price,chg:m.price_change_percentage_24h||0}));
     if(activeTab==="top20")renderTab();
