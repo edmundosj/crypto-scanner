@@ -24,16 +24,32 @@ body.light .coin-card.sel{background:#e6fff3;border-color:#00a050}
 @keyframes slideup{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
 @keyframes obpulse{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 12px 2px var(--ob-color,#00ff87)}}
 /* ── ORDER BOOK BANNER ── */
-.ob-banner{margin-bottom:14px;border-radius:12px;border:2px solid;padding:14px 16px;transition:all .4s;animation:fadein .3s ease}
+.ob-banner{margin-bottom:14px;border-radius:14px;border:2px solid;padding:16px;transition:all .4s;animation:fadein .3s ease}
 .ob-banner.buy{background:#062b15;border-color:var(--g);--ob-color:#00ff87}
 .ob-banner.sell{background:#2b0d0d;border-color:var(--r);--ob-color:#ff4d4d}
 .ob-banner.neutral{background:#1a1a1a;border-color:#444;--ob-color:#888}
 .ob-banner.alert{animation:obpulse 1s ease 3}
-.ob-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.ob-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .ob-signal{font-size:15px;font-weight:700;letter-spacing:.5px}
 .ob-banner.buy .ob-signal{color:var(--g)}
 .ob-banner.sell .ob-signal{color:var(--r)}
 .ob-banner.neutral .ob-signal{color:#888}
+/* ── DESTAQUE PRINCIPAL ── */
+.ob-highlight{
+  border-radius:10px;padding:14px 16px;margin-bottom:12px;
+  display:flex;flex-direction:column;gap:8px;
+}
+.ob-highlight.buy{background:#00ff8715;border:2px solid #00ff87;box-shadow:0 0 20px #00ff8730}
+.ob-highlight.sell{background:#ff4d4d15;border:2px solid #ff4d4d;box-shadow:0 0 20px #ff4d4d30}
+.ob-highlight.neutral{background:#88888815;border:2px solid #888}
+.ob-verdict-big{font-size:22px;font-weight:700;letter-spacing:1px;line-height:1.2}
+.ob-highlight.buy .ob-verdict-big{color:#00ff87}
+.ob-highlight.sell .ob-verdict-big{color:#ff4d4d}
+.ob-highlight.neutral .ob-verdict-big{color:#888}
+.ob-facts{display:flex;flex-direction:column;gap:5px;margin-top:4px}
+.ob-fact{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2)}
+.ob-fact strong{color:var(--text)}
+@keyframes glowpulse{0%,100%{box-shadow:0 0 20px #00ff8730}50%{box-shadow:0 0 35px #00ff8760}}
 .ob-live{font-size:9px;color:var(--muted);display:flex;align-items:center;gap:5px}
 .ob-dot{width:6px;height:6px;border-radius:50%;background:var(--g);animation:pulse 1s infinite}
 .ob-bars{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
@@ -163,6 +179,9 @@ option{background:#111}
   <aside id="sidebar">
     <div id="coinList"><div class="spin"></div></div>
     <div class="disc">⚠ Padrões técnicos para fins educacionais. Não constitui conselho financeiro.</div>
+    <a href="https://www.binance.com/referral/earn-together/refer2earn-usdc/claim?hl=pt-BR&ref=GRO_28502_I5769" target="_blank" style="display:block;margin-top:8px;background:linear-gradient(135deg,#f0b90b,#f8d12f);color:#000;text-align:center;padding:10px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none;letter-spacing:.5px">
+      🏦 Abrir conta na Binance<br><span style="font-size:9px;font-weight:400">Exchange oficial • Melhor liquidez</span>
+    </a>
   </aside>
   <main id="mainContent">
     <div id="obPanel"></div>
@@ -553,6 +572,9 @@ function renderDecisionHTML(coin){
     ${trendHtml}
     <div style="display:flex;flex-direction:column;gap:6px">${d.reasons.map(r=>`<div style="display:flex;gap:8px;font-size:11px"><span style="flex-shrink:0">${r.i}</span><span style="color:var(--text2);line-height:1.4">${r.t}</span></div>`).join("")}</div>
     <div style="margin-top:10px;font-size:9px;color:var(--muted);border-top:1px solid ${d.color}25;padding-top:8px">⚠ Análise de padrões técnicos. Não é conselho financeiro. Invista só o que pode perder.</div>
+    <a href="https://www.binance.com/referral/earn-together/refer2earn-usdc/claim?hl=pt-BR&ref=GRO_28502_I5769" target="_blank" style="display:block;margin-top:8px;background:linear-gradient(135deg,#f0b90b,#f8d12f);color:#000;text-align:center;padding:8px;border-radius:6px;font-size:10px;font-weight:700;text-decoration:none">
+      🏦 Negociar na Binance →
+    </a>
   </div>`;
 }
 function svgChart(data,s7v,s21v){
@@ -822,7 +844,7 @@ let obStableVerdict=null;
 let obStableScore=null;
 let obLastChange=0;
 let obCountdownTimer=null;
-const OB_STABILITY_SEC=60;
+const OB_STABILITY_SEC=90; // 90s para confirmação mais segura
 const OB_SAMPLE_RATE=1000; // 1 snapshot por segundo
 
 // ── Buffer de alta precisão ──
@@ -1047,7 +1069,7 @@ function updateStableVerdict(analysis){
   const secSince=(Date.now()-obLastChange)/1000;
   // Muda só se: 60s+ passaram E consistência >70% E mesma direção
   const dirChanged=(analysis.obScore>0&&obStableScore<=0)||(analysis.obScore<0&&obStableScore>=0)||(analysis.obScore===0&&obStableScore!==0);
-  if(dirChanged && prec.consistency>=70 && secSince>=OB_STABILITY_SEC){
+  if(dirChanged && prec.consistency>=75 && secSince>=OB_STABILITY_SEC){
     const old=obStableVerdict;
     obStableVerdict=newVerdict;
     obStableScore=analysis.obScore;
@@ -1131,9 +1153,9 @@ function analyzeOrderBook(bids,asks){
 
   // ── Veredicto ──
   let verdict,vcolor,vbg,vemoji,vdesc;
-  if(obScore>=5){verdict="🚀 HORA DE COMPRAR";vcolor="#00ff87";vbg="#062b15";vemoji="🚀";vdesc="Livro completo dominado por compradores + indicadores confirmam. Sinal FORTE de compra.";}
-  else if(obScore>=3){verdict="✅ BOA HORA PARA COMPRAR";vcolor="#00dd77";vbg="#0d2b1e";vemoji="🟢";vdesc="Pressão de compra consistente no livro inteiro. Boa janela de entrada.";}
-  else if(obScore>=1){verdict="👀 POSSÍVEL HORA DE COMPRAR";vcolor="#ffd700";vbg="#2a2000";vemoji="🟡";vdesc="Leve dominância compradora. Aguarde mais 60s para confirmar o sinal.";}
+  if(obScore>=6){verdict="🚀 HORA DE COMPRAR";vcolor="#00ff87";vbg="#062b15";vemoji="🚀";vdesc="Livro completo dominado por compradores + todos indicadores alinhados. Sinal MUITO FORTE de compra.";}
+  else if(obScore>=4){verdict="✅ BOA HORA PARA COMPRAR";vcolor="#00dd77";vbg="#0d2b1e";vemoji="🟢";vdesc="Pressão de compra sólida confirmada. Boa janela de entrada com risco controlado.";}
+  else if(obScore>=2){verdict="👀 SINAL FRACO — AGUARDAR CONFIRMAÇÃO";vcolor="#ffd700";vbg="#2a2000";vemoji="🟡";vdesc="Alguma pressão compradora, mas insuficiente. Aguarde 90s de confirmação antes de agir.";}
   else if(obScore===0){verdict="⏳ AGUARDAR";vcolor="#888";vbg="#1a1a1a";vemoji="⚪";vdesc="Mercado equilibrado. Sem direção definida — não entre agora.";}
   else if(obScore>=-2){verdict="⚠️ NÃO COMPRAR";vcolor="#ff8844";vbg="#2b1500";vemoji="🔴";vdesc="Pressão de venda detectada. Evite entrar — risco de queda.";}
   else{verdict="🛑 VENDER / NÃO COMPRAR";vcolor="#ff4d4d";vbg="#2b0d0d";vemoji="🔴";vdesc="Livro dominado por vendedores + indicadores negativos. Sinal FORTE de saída.";}
@@ -1164,9 +1186,9 @@ function renderOBPanel(status){
   const displayBg=obStableScore!=null?(obStableScore>=5?"#062b15":obStableScore>=3?"#0d2b1e":obStableScore>=1?"#2a2000":obStableScore===0?"#1a1a1a":obStableScore>=-2?"#2b1500":"#2b0d0d"):a.vbg;
   const prec=analyzePrecision();
   const secStable=Math.floor((Date.now()-obLastChange)/1000);
-  const isConfirmed=secStable>=OB_STABILITY_SEC&&prec&&prec.consistency>=70;
+  const isConfirmed=secStable>=OB_STABILITY_SEC&&prec&&prec.consistency>=75;
   const confColor=prec?.confidence>=80?"#00ff87":prec?.confidence>=60?"#ffd700":"#ff8844";
-  const precPanel=prec?`<div style="background:#ffffff06;border:1px solid #ffffff10;border-radius:8px;padding:10px 12px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="color:var(--muted);font-size:9px;letter-spacing:1px">ANÁLISE 60 SEGUNDOS</span><span style="color:${confColor};font-size:11px;font-weight:700">CONFIANÇA ${prec.confidence}%</span></div><div style="height:6px;background:var(--bg3);border-radius:3px;margin-bottom:8px;overflow:hidden"><div style="height:100%;width:${prec.confidence}%;background:${confColor};border-radius:3px;transition:width .5s"></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px"><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">CONSISTÊNCIA</div><div style="color:${prec.consistency>=70?"var(--g)":"var(--o)"};font-weight:700">${prec.consistency.toFixed(0)}% ${prec.bullPct>prec.bearPct?"⬆ ALTA":"⬇ BAIXA"}</div></div><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">MOMENTUM</div><div style="color:${prec.momentum>0?"var(--g)":prec.momentum<0?"var(--r)":"var(--muted)"};font-weight:700">${prec.momentum>0.5?"🚀 Acelerando":prec.momentum>0?"↗ Subindo":prec.momentum<-0.5?"🔻 Caindo":"↘ Desacel."}</div></div><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">FLUXO COMPRA</div><div style="color:${prec.buyVolChange>0?"var(--g)":"var(--r)"};font-weight:700">${prec.buyVolChange>0?"+":""}${prec.buyVolChange.toFixed(1)}%</div></div><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">AMOSTRAS</div><div style="color:var(--text);font-weight:700">${prec.totalSamples}/60</div></div></div>${prec.buyAccel>1?`<div style="margin-top:6px;background:#062b15;border:1px solid #00ff8730;border-radius:5px;padding:5px 8px;font-size:10px;color:var(--g)">🚀 Aceleração de COMPRAS nos últimos 10s!</div>`:""}${prec.buyAccel<-1?`<div style="margin-top:6px;background:#2b0d0d;border:1px solid #ff4d4d30;border-radius:5px;padding:5px 8px;font-size:10px;color:var(--r)">🔻 Aceleração de VENDAS nos últimos 10s!</div>`:""}</div>`:"";
+  const precPanel=prec?`<div style="background:#ffffff06;border:1px solid #ffffff10;border-radius:8px;padding:10px 12px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="color:var(--muted);font-size:9px;letter-spacing:1px">ANÁLISE 90 SEGUNDOS</span><span style="color:${confColor};font-size:11px;font-weight:700">CONFIANÇA ${prec.confidence}%</span></div><div style="height:6px;background:var(--bg3);border-radius:3px;margin-bottom:8px;overflow:hidden"><div style="height:100%;width:${prec.confidence}%;background:${confColor};border-radius:3px;transition:width .5s"></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px"><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">CONSISTÊNCIA</div><div style="color:${prec.consistency>=75?"var(--g)":"var(--o)"};font-weight:700">${prec.consistency.toFixed(0)}% ${prec.bullPct>prec.bearPct?"⬆ ALTA":"⬇ BAIXA"}</div></div><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">MOMENTUM</div><div style="color:${prec.momentum>0?"var(--g)":prec.momentum<0?"var(--r)":"var(--muted)"};font-weight:700">${prec.momentum>0.5?"🚀 Acelerando":prec.momentum>0?"↗ Subindo":prec.momentum<-0.5?"🔻 Caindo":"↘ Desacel."}</div></div><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">FLUXO COMPRA</div><div style="color:${prec.buyVolChange>0?"var(--g)":"var(--r)"};font-weight:700">${prec.buyVolChange>0?"+":""}${prec.buyVolChange.toFixed(1)}%</div></div><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">AMOSTRAS</div><div style="color:var(--text);font-weight:700">${prec.totalSamples}/90</div></div></div>${prec.buyAccel>1?`<div style="margin-top:6px;background:#062b15;border:1px solid #00ff8730;border-radius:5px;padding:5px 8px;font-size:10px;color:var(--g)">🚀 Aceleração de COMPRAS nos últimos 10s!</div>`:""}${prec.buyAccel<-1?`<div style="margin-top:6px;background:#2b0d0d;border:1px solid #ff4d4d30;border-radius:5px;padding:5px 8px;font-size:10px;color:var(--r)">🔻 Aceleração de VENDAS nos últimos 10s!</div>`:""}</div>`:"";
   const isStrong=Math.abs(a.obScore)>=4;
 
   const maxQ=Math.max(...[...a.bids,...a.asks].map(x=>x.q));
@@ -1186,8 +1208,18 @@ function renderOBPanel(status){
   const type=a.obScore>0?"buy":a.obScore<0?"sell":"neutral";
 
   el.innerHTML=`<div class="ob-banner ${type}${isStrong?" alert":""}" style="border-color:${displayColor};background:${displayBg}">
+    <!-- DESTAQUE PRINCIPAL -->
+    <div style="border-radius:10px;padding:14px 16px;margin-bottom:12px;background:${displayColor}12;border:2px solid ${displayColor};${a.obScore>=3?'box-shadow:0 0 25px '+displayColor+'40;animation:glowpulse 2s infinite':''}">
+      <div style="font-size:22px;font-weight:700;color:${displayColor};letter-spacing:.5px;margin-bottom:8px">${a.vemoji} ${displayVerdict}</div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <div style="font-size:12px;color:var(--text2)">📊 <strong style="color:var(--text)">${a.buyPct.toFixed(0)}% compras</strong> vs ${a.sellPct.toFixed(0)}% vendas · $${(a.totalBuyVal/1000).toFixed(0)}K em ordens de compra</div>
+        ${a.whaleBuying?`<div style="font-size:12px;color:var(--text2)">🐋 <strong style="color:var(--text)">Baleias concentrando COMPRAS</strong> — grandes investidores posicionados</div>`:''}
+        ${a.whaleSelling?`<div style="font-size:12px;color:var(--text2)">🐋 <strong style="color:var(--text)">Baleias concentrando VENDAS</strong> — grandes investidores saindo</div>`:''}
+        <div style="font-size:12px;color:var(--text2)">${isConfirmed?'✅':'⏳'} <strong style="color:${isConfirmed?displayColor:'var(--o)'}">${isConfirmed?'Sinal confirmado 60s+':'Aguardando confirmação...'}</strong> · Confiança: ${prec?.confidence||0}%</div>
+      </div>
+    </div>
     <div class="ob-top">
-      <span class="ob-signal" style="color:${displayColor};font-size:15px">${a.vemoji} ${displayVerdict}</span>
+      <span class="ob-signal" style="color:${displayColor};font-size:12px">📖 DETALHES DO LIVRO DE ORDENS</span>
       <span class="ob-live"><div class="ob-dot"></div>AO VIVO</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:7px 10px;background:#ffffff08;border-radius:6px">
