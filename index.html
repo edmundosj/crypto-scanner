@@ -1011,42 +1011,8 @@ function connectOrderBook(coinId){
   obStableVerdict=null;
   obLastChange=0;
   renderOBPanel("connecting");
-
-  let wsConnected=false;
-  const wsTimeout=setTimeout(()=>{
-    if(!wsConnected){ try{obWs?.close();}catch(e){} startRESTFallback(coinId); }
-  },5000);
-
-  try{
-    obWs=new WebSocket(`wss://stream.binance.com:9443/ws/${sym}@depth100@1000ms`);
-    obWs.onopen=()=>{
-      wsConnected=true;
-      clearTimeout(wsTimeout);
-      renderOBPanel("connecting");
-      obCountdownTimer=setInterval(()=>{
-        const el=document.getElementById("ob-countdown");
-        if(el&&obStableVerdict){
-          const sec=Math.floor((Date.now()-obLastChange)/1000);
-          const prec=analyzePrecision();
-          el.textContent=sec>=OB_STABILITY_SEC
-            ?`✅ Confirmado há ${sec}s | Confiança: ${prec?.confidence||0}%`
-            :`⏳ ${OB_STABILITY_SEC-sec}s para confirmar | Confiança: ${prec?.confidence||0}%`;
-        }
-      },1000);
-    };
-    obWs.onmessage=(e)=>{
-      try{
-        const d=JSON.parse(e.data);
-        obData.bids=(d.bids||[]).map(([p,q])=>({p:parseFloat(p),q:parseFloat(q)})).filter(x=>x.q>0);
-        obData.asks=(d.asks||[]).map(([p,q])=>({p:parseFloat(p),q:parseFloat(q)})).filter(x=>x.q>0);
-        const a=analyzeOrderBook(obData.bids,obData.asks);
-        if(a){ pushSnapshot(obData.bids,obData.asks,a.obScore); updateStableVerdict(a); }
-        renderOBPanel("live");
-      }catch(err){}
-    };
-    obWs.onerror=()=>{ clearTimeout(wsTimeout); if(!wsConnected) startRESTFallback(coinId); };
-    obWs.onclose=()=>{ if(obCoinId===coinId&&!obRestTimer) startRESTFallback(coinId); };
-  }catch(e){ clearTimeout(wsTimeout); startRESTFallback(coinId); }
+  // REST proxy direto — sem WebSocket
+  startRESTFallback(coinId);
 }
 
 function updateStableVerdict(analysis){
