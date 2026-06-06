@@ -854,69 +854,116 @@ function pushSnapshot(bids, asks, score){
   const totalSellVol=asks.reduce((s,a)=>s+a.q,0);
   const totalBuyVal=bids.reduce((s,b)=>s+b.p*b.q,0);
   const totalSellVal=asks.reduce((s,a)=>s+a.p*a.q,0);
-  obHistory.push({ts,bids:[...bids],asks:[...asks],score,
-    totalBuyVol,totalSellVol,totalBuyVal,totalSellVal,
-    bestBid:bids[0]?.p||0, bestAsk:asks[0]?.p||0
+  const bestBid=bids[0]?.p||0;
+  const bestAsk=asks[0]?.p||0;
+  const midPrice=(bestBid+bestAsk)/2;
+
+  // Ordens grandes acima da média (traders com capital real)
+  const avgBidVal=totalBuyVal/Math.max(bids.length,1);
+  const avgAskVal=totalSellVal/Math.max(asks.length,1);
+  const bigBuyVal=bids.filter(b=>b.p*b.q>avgBidVal*1.5).reduce((s,b)=>s+b.p*b.q,0);
+  const bigSellVal=asks.filter(a=>a.p*a.q>avgAskVal*1.5).reduce((s,a)=>s+a.p*a.q,0);
+
+  // Fluxo próximo ao preço (intenção imediata)
+  const nearBuyVal=bids.filter(b=>b.p>=midPrice*0.995).reduce((s,b)=>s+b.p*b.q,0);
+  const nearSellVal=asks.filter(a=>a.p<=midPrice*1.005).reduce((s,a)=>s+a.p*a.q,0);
+
+  obHistory.push({
+    ts, score,
+    totalBuyVol, totalSellVol, totalBuyVal, totalSellVal,
+    bigBuyVal, bigSellVal, nearBuyVal, nearSellVal,
+    bestBid, bestAsk, midPrice,
+    bids:[...bids.slice(0,10)], asks:[...asks.slice(0,10)]
   });
   obSignalBuffer.push({ts,score});
-  // Manter só últimos 120s de histórico
   const cutoff=ts-120000;
   obHistory=obHistory.filter(x=>x.ts>cutoff);
   obSignalBuffer=obSignalBuffer.filter(x=>x.ts>cutoff);
 }
 
-// ── Análise de precisão dos últimos 60s ──
+// ── Análise de precisão + Antecipação de Valorização ──
 function analyzePrecision(){
   if(obHistory.length<5) return null;
   const now=Date.now();
-  const last60=obHistory.filter(x=>x.ts>now-60000);
+  const last90=obHistory.filter(x=>x.ts>now-90000);
   const last30=obHistory.filter(x=>x.ts>now-30000);
   const last10=obHistory.filter(x=>x.ts>now-10000);
-  if(!last60.length) return null;
+  if(!last90.length) return null;
 
-  // 1. PRESSÃO ACUMULADA: média ponderada (recente vale mais)
-  const weightedScore=last60.reduce((s,x,i)=>s+x.score*(i+1),0)/last60.reduce((s,_,i)=>s+(i+1),0);
+  // Score ponderado (mais recente = mais peso)
+  const weightedScore=last90.reduce((s,x,i)=>s+x.score*(i+1),0)/last90.reduce((s,_,i)=>s+(i+1),0);
 
-  // 2. MOMENTUM: está acelerando ou desacelerando?
-  const avgScore60=last60.reduce((s,x)=>s+x.score,0)/last60.length;
-  const avgScore30=last30.length?last30.reduce((s,x)=>s+x.score,0)/last30.length:avgScore60;
+  // Momentum
+  const avgScore90=last90.reduce((s,x)=>s+x.score,0)/last90.length;
+  const avgScore30=last30.length?last30.reduce((s,x)=>s+x.score,0)/last30.length:avgScore90;
   const avgScore10=last10.length?last10.reduce((s,x)=>s+x.score,0)/last10.length:avgScore30;
-  const momentum=avgScore10-avgScore60; // positivo = acelerando para cima
+  const momentum=avgScore10-avgScore90;
 
-  // 3. CONSISTÊNCIA: quantos % dos samples apontam na mesma direção?
-  const bullSamples=last60.filter(x=>x.score>0).length;
-  const bearSamples=last60.filter(x=>x.score<0).length;
-  const totalSamples=last60.length;
+  // Consistência direcional
+  const bullSamples=last90.filter(x=>x.score>0).length;
+  const bearSamples=last90.filter(x=>x.score<0).length;
+  const totalSamples=last90.length;
   const bullPct=(bullSamples/totalSamples)*100;
   const bearPct=(bearSamples/totalSamples)*100;
-  const consistency=Math.max(bullPct,bearPct); // % de consistência
+  const consistency=Math.max(bullPct,bearPct);
 
-  // 4. FLUXO DE ORDENS: variação de volume no livro
-  const first=last60[0], last=last60[last60.length-1];
-  const buyVolChange=last?((last.totalBuyVol-first.totalBuyVol)/Math.max(first.totalBuyVol,1))*100:0;
-  const sellVolChange=last?((last.totalSellVol-first.totalSellVol)/Math.max(first.totalSellVol,1))*100:0;
+  // ── SINAIS DE ANTECIPAÇÃO DE VALORIZAÇÃO ──
 
-  // 5. SPREAD TREND: está apertando (liquidez aumentando) ou abrindo?
-  const spreads=last60.map(x=>x.bestAsk>0&&x.bestBid>0?((x.bestAsk-x.bestBid)/x.bestBid)*100:0).filter(x=>x>0);
+  // 1. ACÚMULO: volume de compra crescendo ao longo do tempo?
+  const first=last90[0], last=last90[last90.length-1];
+  const buyVolChange=first&&last?((last.totalBuyVal-first.totalBuyVal)/Math.max(first.totalBuyVal,1))*100:0;
+  const sellVolChange=first&&last?((last.totalSellVal-first.totalSellVal)/Math.max(first.totalSellVal,1))*100:0;
+  const accumulating=buyVolChange>10&&buyVolChange>sellVolChange; // compradores acumulando
+
+  // 2. LIQUIDAÇÃO DE VENDAS: vendedores saindo = menos resistência = preço pode subir
+  const sellLiquidating=sellVolChange<-10&&buyVolChange>-5;
+
+  // 3. SQUEEZE: spread apertando = liquidez aumentando = movimento iminente
+  const spreads=last90.map(x=>x.bestAsk>0&&x.bestBid>0?((x.bestAsk-x.bestBid)/x.bestBid)*100:0).filter(x=>x>0);
   const avgSpread=spreads.length?spreads.reduce((a,b)=>a+b,0)/spreads.length:0;
   const spreadTrend=spreads.length>=2?spreads[spreads.length-1]-spreads[0]:0;
+  const squeezing=spreadTrend<-0.01; // spread apertando = movimento iminente
 
-  // 6. ACELERAÇÃO DE COMPRAS: nos últimos 10s vs 30s
+  // 4. ICEBERG: ordens grandes aparecendo e desaparecendo rapidamente (institucional escondendo)
+  const bigBuyTrend=last30.length>=2?
+    last30[last30.length-1].bigBuyVal-last30[0].bigBuyVal:0;
+  const icebergBuying=bigBuyTrend>0&&buyVolChange<5; // capital grande entrando discretamente
+
+  // 5. ACELERAÇÃO DE COMPRA nos últimos 10s
   const buyAccel=avgScore10-avgScore30;
 
-  // 7. CONFIANÇA GERAL (0-100)
+  // 6. DESEQUILÍBRIO CRESCENTE: fluxo próximo ao preço favorecendo compra
+  const nearBuyAvg=last30.length?last30.reduce((s,x)=>s+x.nearBuyVal,0)/last30.length:0;
+  const nearSellAvg=last30.length?last30.reduce((s,x)=>s+x.nearSellVal,0)/last30.length:0;
+  const nearImbalance=nearBuyAvg>0&&nearSellAvg>0?nearBuyAvg/nearSellAvg:1;
+
+  // ── SCORE DE ANTECIPAÇÃO ──
+  let anticipationScore=0;
+  const anticipationSignals=[];
+
+  if(accumulating){anticipationScore+=2;anticipationSignals.push("📈 ACÚMULO detectado: compradores aumentando posição — possível valorização antes de acontecer");}
+  if(sellLiquidating){anticipationScore+=2;anticipationSignals.push("🔄 LIQUIDAÇÃO de vendas: resistência caindo — caminho livre para subida");}
+  if(squeezing){anticipationScore+=1;anticipationSignals.push("🎯 SQUEEZE de spread: liquidez aumentando — movimento forte iminente");}
+  if(icebergBuying){anticipationScore+=2;anticipationSignals.push("🧊 ICEBERG detectado: capital institucional entrando discretamente — sinal forte");}
+  if(nearImbalance>1.4){anticipationScore+=2;anticipationSignals.push(`⚡ DESEQUILÍBRIO próximo ao preço: ${nearImbalance.toFixed(1)}x mais compra que venda perto do mercado`);}
+  if(buyAccel>1){anticipationScore+=1;anticipationSignals.push("🚀 ACELERAÇÃO de compras nos últimos 10s — entrada de novos compradores");}
+
+  // Confiança geral
   let confidence=0;
-  confidence+=consistency*0.4;                          // 40% = consistência direcional
-  confidence+=Math.min(30, totalSamples*0.5);           // 30% = quantidade de amostras
-  confidence+=Math.abs(weightedScore)>3?20:Math.abs(weightedScore)>1?10:0; // 20% = força do sinal
-  confidence+=spreadTrend<0?10:0;                       // 10% = spread apertando = boa liquidez
+  confidence+=consistency*0.35;
+  confidence+=Math.min(25, totalSamples*0.28);
+  confidence+=Math.abs(weightedScore)>3?20:Math.abs(weightedScore)>1?10:0;
+  confidence+=spreadTrend<0?10:0;
+  confidence+=anticipationScore*3;
   confidence=Math.min(100,Math.round(confidence));
 
   return{
     weightedScore, momentum, consistency, bullPct, bearPct,
     buyVolChange, sellVolChange, spreadTrend, avgSpread,
     buyAccel, confidence, totalSamples,
-    avgScore60, avgScore30, avgScore10
+    avgScore90, avgScore30, avgScore10,
+    accumulating, sellLiquidating, squeezing, icebergBuying,
+    nearImbalance, anticipationScore, anticipationSignals
   };
 }
 
@@ -1224,7 +1271,7 @@ function renderOBPanel(status){
   const secStable=Math.floor((Date.now()-obLastChange)/1000);
   const isConfirmed=secStable>=OB_STABILITY_SEC&&prec&&prec.consistency>=75;
   const confColor=prec?.confidence>=80?"#00ff87":prec?.confidence>=60?"#ffd700":"#ff8844";
-  const precPanel=prec?`<div style="background:#ffffff06;border:1px solid #ffffff10;border-radius:8px;padding:10px 12px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="color:var(--muted);font-size:9px;letter-spacing:1px">ANÁLISE 90 SEGUNDOS</span><span style="color:${confColor};font-size:11px;font-weight:700">CONFIANÇA ${prec.confidence}%</span></div><div style="height:6px;background:var(--bg3);border-radius:3px;margin-bottom:8px;overflow:hidden"><div style="height:100%;width:${prec.confidence}%;background:${confColor};border-radius:3px;transition:width .5s"></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px"><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">CONSISTÊNCIA</div><div style="color:${prec.consistency>=75?"var(--g)":"var(--o)"};font-weight:700">${prec.consistency.toFixed(0)}% ${prec.bullPct>prec.bearPct?"⬆ ALTA":"⬇ BAIXA"}</div></div><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">MOMENTUM</div><div style="color:${prec.momentum>0?"var(--g)":prec.momentum<0?"var(--r)":"var(--muted)"};font-weight:700">${prec.momentum>0.5?"🚀 Acelerando":prec.momentum>0?"↗ Subindo":prec.momentum<-0.5?"🔻 Caindo":"↘ Desacel."}</div></div><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">FLUXO COMPRA</div><div style="color:${prec.buyVolChange>0?"var(--g)":"var(--r)"};font-weight:700">${prec.buyVolChange>0?"+":""}${prec.buyVolChange.toFixed(1)}%</div></div><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">AMOSTRAS</div><div style="color:var(--text);font-weight:700">${prec.totalSamples}/90</div></div></div>${prec.buyAccel>1?`<div style="margin-top:6px;background:#062b15;border:1px solid #00ff8730;border-radius:5px;padding:5px 8px;font-size:10px;color:var(--g)">🚀 Aceleração de COMPRAS nos últimos 10s!</div>`:""}${prec.buyAccel<-1?`<div style="margin-top:6px;background:#2b0d0d;border:1px solid #ff4d4d30;border-radius:5px;padding:5px 8px;font-size:10px;color:var(--r)">🔻 Aceleração de VENDAS nos últimos 10s!</div>`:""}</div>`:"";
+  const precPanel=prec?`<div style="background:#ffffff06;border:1px solid #ffffff10;border-radius:8px;padding:10px 12px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="color:var(--muted);font-size:9px;letter-spacing:1px">ANÁLISE 90 SEGUNDOS</span><span style="color:${confColor};font-size:11px;font-weight:700">CONFIANÇA ${prec.confidence}%</span></div><div style="height:6px;background:var(--bg3);border-radius:3px;margin-bottom:8px;overflow:hidden"><div style="height:100%;width:${prec.confidence}%;background:${confColor};border-radius:3px;transition:width .5s"></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px"><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">CONSISTÊNCIA</div><div style="color:${prec.consistency>=75?"var(--g)":"var(--o)"};font-weight:700">${prec.consistency.toFixed(0)}% ${prec.bullPct>prec.bearPct?"⬆ ALTA":"⬇ BAIXA"}</div></div><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">MOMENTUM</div><div style="color:${prec.momentum>0?"var(--g)":prec.momentum<0?"var(--r)":"var(--muted)"};font-weight:700">${prec.momentum>0.5?"🚀 Acelerando":prec.momentum>0?"↗ Subindo":prec.momentum<-0.5?"🔻 Caindo":"↘ Desacel."}</div></div><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">FLUXO COMPRA</div><div style="color:${prec.buyVolChange>0?"var(--g)":"var(--r)"};font-weight:700">${prec.buyVolChange>0?"+":""}${prec.buyVolChange.toFixed(1)}%</div></div><div style="background:var(--bg3);border-radius:5px;padding:6px 8px"><div style="color:var(--muted);font-size:8px">AMOSTRAS</div><div style="color:var(--text);font-weight:700">${prec.totalSamples}/90</div></div></div>${prec.buyAccel>1?`<div style="margin-top:6px;background:#062b15;border:1px solid #00ff8730;border-radius:5px;padding:5px 8px;font-size:10px;color:var(--g)">🚀 Aceleração de COMPRAS nos últimos 10s!</div>`:""}${prec.buyAccel<-1?`<div style="margin-top:6px;background:#2b0d0d;border:1px solid #ff4d4d30;border-radius:5px;padding:5px 8px;font-size:10px;color:var(--r)">🔻 Aceleração de VENDAS nos últimos 10s!</div>`:""}${prec.anticipationSignals?.length?`<div style="margin-top:8px;border-top:1px solid #ffffff10;padding-top:8px"><div style="color:var(--muted);font-size:8px;letter-spacing:1px;margin-bottom:5px">🔮 SINAIS DE ANTECIPAÇÃO DE VALORIZAÇÃO</div>${prec.anticipationSignals.map(s=>`<div style="font-size:10px;color:#00ff87;margin-bottom:3px;line-height:1.4">${s}</div>`).join("")}</div>`:""}</div>`:"";
   const isStrong=Math.abs(a.obScore)>=4;
 
   const maxQ=Math.max(...[...a.bids,...a.asks].map(x=>x.q));
