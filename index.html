@@ -1046,89 +1046,166 @@ function updateStableVerdict(analysis){
 function analyzeOrderBook(bids,asks){
   if(!bids.length||!asks.length) return null;
 
-  // ── Análise do livro COMPLETO (100 níveis) ──
-  const totalBuyVol=bids.reduce((s,b)=>s+b.q,0);         // qtd total compra
-  const totalSellVol=asks.reduce((s,a)=>s+a.q,0);        // qtd total venda
-  const totalBuyVal=bids.reduce((s,b)=>s+b.p*b.q,0);     // valor $ total compra
-  const totalSellVal=asks.reduce((s,a)=>s+a.p*a.q,0);    // valor $ total venda
+  // ── Análise do livro COMPLETO ──
+  const totalBuyVol=bids.reduce((s,b)=>s+b.q,0);
+  const totalSellVol=asks.reduce((s,a)=>s+a.q,0);
+  const totalBuyVal=bids.reduce((s,b)=>s+b.p*b.q,0);
+  const totalSellVal=asks.reduce((s,a)=>s+a.p*a.q,0);
   const total=totalBuyVal+totalSellVal;
   const buyPct=(totalBuyVal/total)*100;
   const sellPct=(totalSellVal/total)*100;
   const ratio=totalBuyVal/totalSellVal;
-
-  // Top 5 para exibição
   const top5bids=bids.slice(0,5);
   const top5asks=asks.slice(0,5);
   const bigBid=bids.reduce((mx,b)=>b.q>mx.q?b:mx,bids[0]);
   const bigAsk=asks.reduce((mx,a)=>a.q>mx.q?a:mx,asks[0]);
   const spread=((asks[0].p-bids[0].p)/bids[0].p)*100;
 
-  // ── Análise de concentração (baleias) ──
-  // Top 5 bids representam quanto % do total?
+  // ── VOLUME RELEVANTE: filtra ordens pequenas (ruído) ──
+  // Considera só ordens acima da média — são as que importam
+  const avgBidVal=totalBuyVal/bids.length;
+  const avgAskVal=totalSellVal/asks.length;
+  const bigBids=bids.filter(b=>b.p*b.q>avgBidVal*1.5); // ordens acima de 1.5x a média
+  const bigAsks=asks.filter(a=>a.p*a.q>avgAskVal*1.5);
+  const bigBuyVal=bigBids.reduce((s,b)=>s+b.p*b.q,0);
+  const bigSellVal=bigAsks.reduce((s,a)=>s+a.p*a.q,0);
+  const bigRatio=bigBuyVal>0&&bigSellVal>0?bigBuyVal/bigSellVal:1;
+
+  // ── ORDEM DE FLUXO: onde estão as ordens grandes? ──
+  // Ordens grandes perto do preço atual = intenção real de comprar/vender agora
+  const bestBid=bids[0]?.p||0;
+  const bestAsk=asks[0]?.p||0;
+  const midPrice=(bestBid+bestAsk)/2;
+  // Ordens nos top 10% de preço (próximas ao mercado)
+  const nearBids=bids.filter(b=>b.p>=midPrice*0.995); // até 0.5% abaixo
+  const nearAsks=asks.filter(a=>a.p<=midPrice*1.005); // até 0.5% acima
+  const nearBuyVal=nearBids.reduce((s,b)=>s+b.p*b.q,0);
+  const nearSellVal=nearAsks.reduce((s,a)=>s+a.p*a.q,0);
+  const nearRatio=nearBuyVal>0&&nearSellVal>0?nearBuyVal/nearSellVal:1;
+
+  // ── ABSORÇÃO: compradores absorvendo pressão vendedora? ──
+  // Se há muita venda mas o preço não cai = compradores absorvendo = sinal de alta
+  const absorption=ratio<1.0&&nearRatio>1.2; // venda no livro mas compra perto do preço
+
+  // ── CONCENTRAÇÃO (baleias) ──
   const top5BidVol=top5bids.reduce((s,b)=>s+b.q,0);
   const top5AskVol=top5asks.reduce((s,a)=>s+a.q,0);
   const bidConcentration=(top5BidVol/totalBuyVol)*100;
   const askConcentration=(top5AskVol/totalSellVol)*100;
-  const whaleBuying=bidConcentration>40; // baleias concentrando compras
+  const whaleBuying=bidConcentration>40;
   const whaleSelling=askConcentration>40;
 
-  // ── Score integrado ──
+  // ── SCORE INTEGRADO ──
   const coin=coinsData[selected];
   let obScore=0;
   const obReasons=[];
 
-  // 1. Pressão geral (ratio de valor $)
-  if(ratio>1.8){obScore+=4;obReasons.push({i:"🟢",t:`${buyPct.toFixed(0)}% do volume é COMPRA ($${(totalBuyVal/1000).toFixed(0)}K) — mercado dominado por compradores`});}
-  else if(ratio>1.4){obScore+=3;obReasons.push({i:"🟢",t:`${buyPct.toFixed(0)}% do volume é COMPRA — forte pressão compradora no livro inteiro`});}
-  else if(ratio>1.15){obScore+=2;obReasons.push({i:"✅",t:`${buyPct.toFixed(0)}% do volume é COMPRA — boa dominância compradora`});}
-  else if(ratio>1.03){obScore+=1;obReasons.push({i:"✅",t:`${buyPct.toFixed(0)}% do volume é COMPRA — leve vantagem compradora`});}
-  else if(ratio<0.55){obScore-=4;obReasons.push({i:"🔴",t:`${sellPct.toFixed(0)}% do volume é VENDA ($${(totalSellVal/1000).toFixed(0)}K) — mercado dominado por vendedores`});}
-  else if(ratio<0.71){obScore-=3;obReasons.push({i:"🔴",t:`${sellPct.toFixed(0)}% do volume é VENDA — forte pressão vendedora no livro inteiro`});}
-  else if(ratio<0.87){obScore-=2;obReasons.push({i:"🔴",t:`${sellPct.toFixed(0)}% do volume é VENDA — boa dominância vendedora`});}
-  else if(ratio<0.97){obScore-=1;obReasons.push({i:"⚠️",t:`${sellPct.toFixed(0)}% do volume é VENDA — leve vantagem vendedora`});}
+  // 1. Pressão geral de valor $
+  if(ratio>1.8){obScore+=3;obReasons.push({i:"🟢",t:`${buyPct.toFixed(0)}% do volume total é COMPRA — $${(totalBuyVal/1000).toFixed(0)}K compradores vs $${(totalSellVal/1000).toFixed(0)}K vendedores`});}
+  else if(ratio>1.4){obScore+=2;obReasons.push({i:"🟢",t:`${buyPct.toFixed(0)}% do volume é COMPRA — dominância compradora clara`});}
+  else if(ratio>1.1){obScore+=1;obReasons.push({i:"✅",t:`${buyPct.toFixed(0)}% do volume é COMPRA — leve vantagem compradora`});}
+  else if(ratio<0.55){obScore-=3;obReasons.push({i:"🔴",t:`${sellPct.toFixed(0)}% do volume é VENDA — $${(totalSellVal/1000).toFixed(0)}K vendedores dominando`});}
+  else if(ratio<0.71){obScore-=2;obReasons.push({i:"🔴",t:`${sellPct.toFixed(0)}% do volume é VENDA — forte pressão vendedora`});}
+  else if(ratio<0.9){obScore-=1;obReasons.push({i:"⚠️",t:`${sellPct.toFixed(0)}% do volume é VENDA — leve vantagem vendedora`});}
   else{obReasons.push({i:"⚖️",t:`Volume equilibrado: ${buyPct.toFixed(0)}% compra / ${sellPct.toFixed(0)}% venda`});}
 
-  // 2. Baleias
-  if(whaleBuying&&obScore>0){obScore+=1;obReasons.push({i:"🐋",t:`Baleias concentrando COMPRAS — ${bidConcentration.toFixed(0)}% do volume nos top 5 compradores`});}
-  if(whaleSelling&&obScore<0){obScore-=1;obReasons.push({i:"🐋",t:`Baleias concentrando VENDAS — ${askConcentration.toFixed(0)}% do volume nos top 5 vendedores`});}
-
-  // 3. Muro de compra / venda
-  const muralBuyPct=(bigBid.q/totalBuyVol)*100;
-  const muralSellPct=(bigAsk.q/totalSellVol)*100;
-  if(muralBuyPct>20){obScore+=1;obReasons.push({i:"🧱",t:`Muro de COMPRA em $${bigBid.p.toLocaleString("en-US",{maximumFractionDigits:4})} — ${muralBuyPct.toFixed(0)}% de toda a demanda num só nível`});}
-  if(muralSellPct>20){obScore-=1;obReasons.push({i:"🧱",t:`Muro de VENDA em $${bigAsk.p.toLocaleString("en-US",{maximumFractionDigits:4})} — ${muralSellPct.toFixed(0)}% de toda a oferta num só nível`});}
-
-  // 4. Confirmar com RSI
-  if(coin?.rsi!=null){
-    if(coin.rsi<35&&obScore>0){obScore+=1;obReasons.push({i:"✅",t:`RSI baixo (${coin.rsi.toFixed(1)}) + pressão de compra = entrada confirmada`});}
-    if(coin.rsi>65&&obScore<0){obScore-=1;obReasons.push({i:"⚠️",t:`RSI alto (${coin.rsi.toFixed(1)}) + pressão de venda = saída confirmada`});}
+  // 2. ORDENS GRANDES (relevância real) — as que movem o mercado
+  if(bigRatio>1.6){
+    obScore+=2;
+    obReasons.push({i:"💰",t:`Ordens GRANDES de compra dominando: $${(bigBuyVal/1000).toFixed(0)}K em ordens acima da média — traders sérios comprando`});
+  } else if(bigRatio>1.2){
+    obScore+=1;
+    obReasons.push({i:"💰",t:`Ordens relevantes de compra: $${(bigBuyVal/1000).toFixed(0)}K — participação de traders com capital`});
+  } else if(bigRatio<0.6){
+    obScore-=2;
+    obReasons.push({i:"💸",t:`Ordens GRANDES de venda dominando: $${(bigSellVal/1000).toFixed(0)}K — traders sérios vendendo`});
+  } else if(bigRatio<0.8){
+    obScore-=1;
+    obReasons.push({i:"💸",t:`Ordens relevantes de venda: $${(bigSellVal/1000).toFixed(0)}K acima da média`});
   }
 
-  // 5. Confirmar com tendência SMA
+  // 3. FLUXO PRÓXIMO AO PREÇO — intenção imediata
+  if(nearRatio>1.5){
+    obScore+=2;
+    obReasons.push({i:"⚡",t:`Compradores posicionados PERTO do preço atual — $${(nearBuyVal/1000).toFixed(0)}K aguardando para comprar agora`});
+  } else if(nearRatio>1.2){
+    obScore+=1;
+    obReasons.push({i:"⚡",t:`Pressão de compra próxima ao preço — traders prontos para entrar`});
+  } else if(nearRatio<0.6){
+    obScore-=2;
+    obReasons.push({i:"⚡",t:`Vendedores posicionados PERTO do preço atual — resistência imediata forte`});
+  }
+
+  // 4. ABSORÇÃO — sinal poderoso de reversão
+  if(absorption){
+    obScore+=2;
+    obReasons.push({i:"🔄",t:`ABSORÇÃO detectada: compradores absorvendo a pressão vendedora próximo ao preço — sinal forte de reversão de alta`});
+  }
+
+  // 5. Muro de compra (suporte forte)
+  const muralBuyPct=(bigBid.q/totalBuyVol)*100;
+  const muralSellPct=(bigAsk.q/totalSellVol)*100;
+  if(muralBuyPct>15){
+    obScore+=1;
+    obReasons.push({i:"🧱",t:`Muro de SUPORTE em $${bigBid.p.toLocaleString("en-US",{maximumFractionDigits:4})} — ${muralBuyPct.toFixed(0)}% da demanda concentrada, preço tem piso`});
+  }
+  if(muralSellPct>15){
+    obScore-=1;
+    obReasons.push({i:"🧱",t:`Muro de RESISTÊNCIA em $${bigAsk.p.toLocaleString("en-US",{maximumFractionDigits:4})} — ${muralSellPct.toFixed(0)}% da oferta concentrada, preço tem teto`});
+  }
+
+  // 6. Baleias (concentração)
+  if(whaleBuying&&obScore>0){obScore+=1;obReasons.push({i:"🐋",t:`Baleias posicionadas em COMPRA — ${bidConcentration.toFixed(0)}% do volume nos top 5`});}
+  if(whaleSelling&&obScore<0){obScore-=1;obReasons.push({i:"🐋",t:`Baleias posicionadas em VENDA — ${askConcentration.toFixed(0)}% do volume nos top 5`});}
+
+  // 7. RSI confirma
+  if(coin?.rsi!=null){
+    if(coin.rsi<35&&obScore>0){obScore+=1;obReasons.push({i:"✅",t:`RSI sobrevendido (${coin.rsi.toFixed(1)}) + pressão de compra = reversão iminente`});}
+    if(coin.rsi>65&&obScore<0){obScore-=1;obReasons.push({i:"⚠️",t:`RSI sobrecomprado (${coin.rsi.toFixed(1)}) + pressão de venda = correção iminente`});}
+  }
+
+  // 8. Tendência confirma
   if(coin?.sma7&&coin?.sma21){
-    if(coin.sma7>coin.sma21&&obScore>0){obScore+=1;obReasons.push({i:"✅",t:"Tendência de alta + pressão de compra = sinal duplo confirmado"});}
-    if(coin.sma7<coin.sma21&&obScore<0){obScore-=1;obReasons.push({i:"⚠️",t:"Tendência de baixa + pressão de venda = sinal duplo confirmado"});}
+    if(coin.sma7>coin.sma21&&obScore>0){obScore+=1;obReasons.push({i:"✅",t:"Tendência de ALTA + fluxo de compra = entrada de alta probabilidade"});}
+    if(coin.sma7<coin.sma21&&obScore<0){obScore-=1;obReasons.push({i:"⚠️",t:"Tendência de BAIXA + fluxo de venda = evitar compra"});}
   }
 
   // ── Veredicto ──
   let verdict,vcolor,vbg,vemoji,vdesc;
-  if(obScore>=6){verdict="🚀 HORA DE COMPRAR";vcolor="#00ff87";vbg="#062b15";vemoji="🚀";vdesc="Livro completo dominado por compradores + todos indicadores alinhados. Sinal MUITO FORTE de compra.";}
-  else if(obScore>=4){verdict="✅ BOA HORA PARA COMPRAR";vcolor="#00dd77";vbg="#0d2b1e";vemoji="🟢";vdesc="Pressão de compra sólida confirmada. Boa janela de entrada com risco controlado.";}
-  else if(obScore>=2){verdict="👀 SINAL FRACO — AGUARDAR CONFIRMAÇÃO";vcolor="#ffd700";vbg="#2a2000";vemoji="🟡";vdesc="Alguma pressão compradora, mas insuficiente. Aguarde 90s de confirmação antes de agir.";}
-  else if(obScore===0){verdict="⏳ AGUARDAR";vcolor="#888";vbg="#1a1a1a";vemoji="⚪";vdesc="Mercado equilibrado. Sem direção definida — não entre agora.";}
-  else if(obScore>=-2){verdict="⚠️ NÃO COMPRAR";vcolor="#ff8844";vbg="#2b1500";vemoji="🔴";vdesc="Pressão de venda detectada. Evite entrar — risco de queda.";}
-  else{verdict="🛑 VENDER / NÃO COMPRAR";vcolor="#ff4d4d";vbg="#2b0d0d";vemoji="🔴";vdesc="Livro dominado por vendedores + indicadores negativos. Sinal FORTE de saída.";}
+  if(obScore>=7){
+    verdict="🚀 HORA DE COMPRAR";vcolor="#00ff87";vbg="#062b15";vemoji="🚀";
+    vdesc="Volume relevante + fluxo próximo + todos indicadores alinhados. Alta probabilidade de valorização!";
+  } else if(obScore>=5){
+    verdict="✅ BOA HORA PARA COMPRAR";vcolor="#00dd77";vbg="#0d2b1e";vemoji="🟢";
+    vdesc="Ordens grandes de compra confirmadas + indicadores favoráveis. Boa janela de entrada.";
+  } else if(obScore>=3){
+    verdict="👍 POSSÍVEL OPORTUNIDADE";vcolor="#88ff44";vbg="#142800";vemoji="🟡";
+    vdesc="Pressão compradora com volume relevante. Aguarde 90s de confirmação.";
+  } else if(obScore>=1){
+    verdict="👀 SINAL FRACO — AGUARDAR";vcolor="#ffd700";vbg="#2a2000";vemoji="⚪";
+    vdesc="Alguma pressão compradora, mas volume insuficiente para confirmar entrada.";
+  } else if(obScore===0){
+    verdict="⏳ MERCADO NEUTRO";vcolor="#888";vbg="#1a1a1a";vemoji="⚪";
+    vdesc="Sem direção definida. Não entre agora — espere um sinal claro.";
+  } else if(obScore>=-3){
+    verdict="⚠️ NÃO COMPRAR AGORA";vcolor="#ff8844";vbg="#2b1500";vemoji="🔴";
+    vdesc="Ordens de venda com volume relevante. Risco de queda maior que oportunidade.";
+  } else {
+    verdict="🛑 VENDER / SAIR";vcolor="#ff4d4d";vbg="#2b0d0d";vemoji="🔴";
+    vdesc="Fluxo de venda forte + ordens grandes saindo. Alto risco — não compre agora.";
+  }
 
   return{verdict,vcolor,vbg,vemoji,vdesc,obScore,obReasons,
     buyPct,sellPct,ratio,totalBuyVal,totalSellVal,
     totalBuyVol,totalSellVol,bigBid,bigAsk,spread,
-    whaleBuying,whaleSelling,bids:top5bids,asks:top5asks};
+    whaleBuying,whaleSelling,bigRatio,nearRatio,absorption,
+    bids:top5bids,asks:top5asks};
 }
 
 function renderOBPanel(status){
   const el=document.getElementById("obPanel");
   if(status==="connecting"){
-    el.innerHTML=`<div class="ob-banner neutral"><div class="ob-top"><span class="ob-signal">📖 LIVRO DE ORDENS</span><span class="ob-live"><div class="ob-dot" style="background:var(--o)"></div>CONECTANDO...</span></div><div style="color:var(--muted);font-size:11px">Conectando ao livro completo (100 níveis) da Binance...</div></div>`;
+    const cc=coinsData[obCoinId]; el.innerHTML=`<div class="ob-banner neutral"><div class="ob-top"><span class="ob-signal">📖 LIVRO DE ORDENS${cc?` — <strong style="color:var(--text)">${cc.sym} ${cc.name}</strong>`:""}</span><span class="ob-live"><div class="ob-dot" style="background:var(--o)"></div>CONECTANDO...</span></div><div style="color:var(--muted);font-size:11px">Conectando ao livro completo (100 níveis)...</div></div>`;
     return;
   }
   if(status==="error"||status==="closed"){
@@ -1178,7 +1255,7 @@ function renderOBPanel(status){
       </div>
     </div>
     <div class="ob-top">
-      <span class="ob-signal" style="color:${displayColor};font-size:12px">📖 DETALHES DO LIVRO DE ORDENS</span>
+      <span class="ob-signal" style="color:${displayColor};font-size:12px">📖 ${coinsData[obCoinId]?coinsData[obCoinId].sym+" "+coinsData[obCoinId].name:"LIVRO DE ORDENS"} — AO VIVO</span>
       <span class="ob-live"><div class="ob-dot"></div>AO VIVO</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:7px 10px;background:#ffffff08;border-radius:6px">
