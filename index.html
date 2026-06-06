@@ -928,14 +928,8 @@ async function fetchOrderBookREST(coinId){
 
   // Tenta múltiplas fontes em ordem
   const sources=[
-    // 1. Proxy próprio do Vercel (sem CORS!)
+    // Proxy próprio do Vercel — sem CORS
     ()=>fetch(`/api/orderbook?symbol=${sym}`),
-    // 2. Binance direto
-    ()=>fetch(`https://api.binance.com/api/v3/depth?symbol=${sym}&limit=100`),
-    // 3. corsproxy.io
-    ()=>fetch(`https://corsproxy.io/?https://api.binance.com/api/v3/depth?symbol=${sym}&limit=100`),
-    // 4. allorigins
-    ()=>fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://api.binance.com/api/v3/depth?symbol=${sym}&limit=100`)}`),
   ];
 
   for(const source of sources){
@@ -961,7 +955,6 @@ async function fetchOrderBookREST(coinId){
 }
 
 function simulateOrderBook(coinId){
-  // Se não conseguir dados reais, estima pelo RSI e tendência
   const coin=coinsData[coinId];
   if(!coin||!coin.price) return;
   const price=coin.price;
@@ -1029,7 +1022,7 @@ function connectOrderBook(coinId){
     obWs.onopen=()=>{
       wsConnected=true;
       clearTimeout(wsTimeout);
-      renderOBPanel("live");
+      renderOBPanel("connecting");
       obCountdownTimer=setInterval(()=>{
         const el=document.getElementById("ob-countdown");
         if(el&&obStableVerdict){
