@@ -3,30 +3,34 @@ export default async function handler(req, res) {
   const { symbol } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
 
+  // Converte BTCUSDT → BTC-USDT para KuCoin
+  const kucoinSym = symbol.replace('USDT', '-USDT');
+  // Converte para OKX: BTC-USDT
+  const okxSym = symbol.replace('USDT', '-USDT');
+
   const sources = [
-    // Bybit — sem restrições
     async () => {
-      const r = await fetch(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${symbol}&limit=50`);
+      const r = await fetch(`https://api.kucoin.com/api/v1/market/orderbook/level2_100?symbol=${kucoinSym}`);
       const d = await r.json();
-      if (d.retCode !== 0) throw new Error('bybit ' + d.retCode);
-      return { bids: d.result.b, asks: d.result.a };
+      if (!d.data?.bids) throw new Error('kucoin no data');
+      return { bids: d.data.bids, asks: d.data.asks };
     },
-    // OKX
     async () => {
-      const sym = symbol.replace('USDT', '-USDT');
-      const r = await fetch(`https://www.okx.com/api/v5/market/books?instId=${sym}&sz=50`);
+      const r = await fetch(`https://www.okx.com/api/v5/market/books?instId=${okxSym}&sz=50`);
       const d = await r.json();
       if (!d.data?.[0]) throw new Error('okx no data');
       return { bids: d.data[0].bids, asks: d.data[0].asks };
+    },
+    async () => {
+      const r = await fetch(`https://api.mexc.com/api/v3/depth?symbol=${symbol}&limit=50`);
+      if (!r.ok) throw new Error('mexc ' + r.status);
+      return await r.json();
     },
   ];
 
   for (const src of sources) {
     try {
-      const data = await Promise.race([
-        src(),
-        new Promise((_,r) => setTimeout(() => r(new Error('timeout')), 5000))
-      ]);
+      const data = await Promise.race([src(), new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),5000))]);
       if (data?.bids?.length) return res.status(200).json(data);
     } catch(e) { continue; }
   }
