@@ -621,7 +621,8 @@ function fmtPrice(p){
   if(p>=1) return p.toLocaleString("en-US",{maximumFractionDigits:4});
   if(p>=0.01) return p.toLocaleString("en-US",{maximumFractionDigits:6});
   if(p>=0.0001) return p.toLocaleString("en-US",{maximumFractionDigits:8});
-  return p.toExponential(4);
+  // Preços muito pequenos (SHIB, etc) — mostra decimais sem notação científica
+  return p.toFixed(10).replace(/\.?0+$/,"");
 }
 // ── FETCH — CoinGecko single call ──
 async function fetchAll(){
