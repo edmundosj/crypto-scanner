@@ -682,7 +682,7 @@ function renderCoinList(){
       const d=coinsData[c.id];
       if(!d){html+=`<div class="cc" onclick="selectCoin('${c.id}')"><span class="csym">${c.sym}</span> <span class="cname">${c.name}</span></div>`;continue;}
       const pos=d.chg>=0;
-      const dec=calcDecision(d);
+      const dec=calcUnifiedVerdict(d);
       const hasAlert=alerts.some(a=>a.coinId===c.id);
       html+=`<div class="cc${c.id===selected?" sel":""}" onclick="selectCoin('${c.id}')">
         <div class="crow">
@@ -714,6 +714,84 @@ const EXCHANGE_URLS={
   "the-graph":{binance:"GRT/USDT",bybit:"GRTUSDT",kucoin:"GRT-USDT",mb:null},
   chainlink:  {binance:"LINK/USDT",bybit:"LINKUSDT",kucoin:"LINK-USDT",mb:"LINK"},
 };
+
+
+// ── VEREDICTO UNIFICADO — MÁXIMA PRECISÃO ──
+function calcUnifiedVerdict(coin){
+  const dec=calcDecision(coin);
+  if(!dec) return null;
+  const techScore=dec.score;
+  const obAvail=obCoinId===coin.id&&typeof obStableScore!=="undefined"&&obStableScore!==null&&obHistory.length>=10;
+  const obScore=obAvail?obStableScore:null;
+  const tf=calcTrendForecast(coin.spark);
+  const trendScore=tf?
+    (tf.t.includes("IMINENTE")&&tf.t.includes("VALOR")?3:
+     tf.t.includes("CAMINHO")&&tf.t.includes("VALOR")?2:
+     tf.t.includes("VIÉS DE ALTA")?1:
+     tf.t.includes("VIÉS DE BAIXA")?-1:
+     tf.t.includes("CAMINHO")&&tf.t.includes("DESVAL")?-2:
+     tf.t.includes("IMINENTE")&&tf.t.includes("DESVAL")?-3:0):0;
+  const macd=calcMACD(coin.spark);
+  const macdScore=macd?(macd.crossing&&macd.bullish?2:macd.bullish?1:macd.crossing&&!macd.bullish?-2:!macd.bullish?-1:0):0;
+  let weightedScore;
+  if(obScore!==null){
+    weightedScore=((techScore*0.30)+(obScore*0.35)+(trendScore*0.20)+(macdScore*0.15))*2;
+  } else {
+    weightedScore=((techScore*0.50)+(trendScore*0.30)+(macdScore*0.20))*1.5;
+  }
+  const seriousConflict=obScore!==null&&((techScore>=2&&obScore<=-2)||(techScore<=-2&&obScore>=2));
+  const lightConflict=obScore!==null&&!seriousConflict&&((techScore>0&&obScore<0)||(techScore<0&&obScore>0));
+  const signals=[techScore,obScore!==null?obScore:null,trendScore,macdScore].filter(x=>x!==null);
+  const bullSignals=signals.filter(s=>s>0).length;
+  const bearSignals=signals.filter(s=>s<0).length;
+  const confidence=Math.round(Math.max(bullSignals,bearSignals)/signals.length*100);
+  let verdict,color,bg,emoji,desc,pulse=false,sources=[];
+  if(seriousConflict){
+    verdict="⚠️ CONFLITO GRAVE — NÃO OPERE";color="#ff4d4d";bg="#2b0d0d";emoji="⚠️";pulse=true;
+    desc="Indicadores e livro de ordens em CONFLITO. Aguarde alinhamento — risco muito alto.";
+  } else if(lightConflict){
+    verdict="🔄 SINAIS MISTOS — AGUARDAR";color="#ff8844";bg="#2b1500";emoji="🔄";
+    desc="Alguns sinais divergem. Aguarde mais clareza antes de entrar.";
+  } else if(weightedScore>=7&&confidence>=80){
+    verdict="🚀 EXCELENTE HORA DE COMPRAR";color="#00ff87";bg="#062b15";emoji="🚀";pulse=true;
+    desc=`TODOS os sinais alinhados para COMPRA com ${confidence}% de confiança. Oportunidade rara!`;
+  } else if(weightedScore>=5&&confidence>=70){
+    verdict="✅ HORA DE COMPRAR — ALTA CONFIANÇA";color="#00dd77";bg="#0d2b1e";emoji="✅";
+    desc=`${confidence}% dos sinais apontam COMPRA. Boa janela com risco controlado.`;
+  } else if(weightedScore>=3&&confidence>=60){
+    verdict="👍 BOA OPORTUNIDADE — CONFIRMAR";color="#88ff44";bg="#142800";emoji="🟢";
+    desc="Maioria dos sinais favoráveis. Use Stop Loss antes de entrar.";
+  } else if(weightedScore>=1){
+    verdict="👀 SINAL FRACO — AGUARDAR MAIS";color="#ffd700";bg="#2a2000";emoji="🟡";
+    desc="Sinais levemente positivos mas insuficientes. Aguarde mais confirmações.";
+  } else if(weightedScore>=-1){
+    verdict="⏳ NEUTRO — SEM SINAL CLARO";color="#888";bg="#1a1a1a";emoji="⚪";
+    desc="Mercado sem direção. Fique de fora até aparecer um sinal claro.";
+  } else if(weightedScore>=-4){
+    verdict="⚠️ NÃO COMPRAR — PRESSÃO DE VENDA";color="#ff8844";bg="#2b1500";emoji="🔴";
+    desc="Sinais negativos predominando. Risco maior que oportunidade.";
+  } else if(weightedScore>=-7){
+    verdict="🛑 EVITAR — TENDÊNCIA DE BAIXA";color="#ff4d4d";bg="#2b0d0d";emoji="🛑";
+    desc="Múltiplos sinais negativos. Alto risco de queda continuada.";
+  } else {
+    verdict="💀 PERIGO — SINAL FORTE DE BAIXA";color="#ff0000";bg="#1a0000";emoji="🔴";pulse=true;
+    desc="TODOS os sinais apontam BAIXA. Não compre — queda forte possível.";
+  }
+  if(!seriousConflict){
+    sources.push({i:"📊",t:`Indicadores (RSI+SMA): ${techScore>=2?"✅ COMPRA":techScore<=-2?"❌ VENDA":"⚖️ NEUTRO"} · score ${techScore>0?"+":""}${techScore}`});
+    if(obScore!==null) sources.push({i:"📖",t:`Livro de Ordens (90s): ${obScore>=2?"✅ COMPRA":obScore<=-2?"❌ VENDA":"⚖️ NEUTRO"} · score ${obScore>0?"+":""}${obScore}`});
+    sources.push({i:"📈",t:`Tendência: ${trendScore>=2?"🚀 Alta forte":trendScore===1?"⬆️ Alta":trendScore===-1?"⬇️ Baixa":trendScore<=-2?"🔻 Baixa forte":"↔️ Lateral"} · score ${trendScore>0?"+":""}${trendScore}`});
+    sources.push({i:"💹",t:`MACD: ${macdScore>=2?"🚀 Cruzamento Alta":macdScore===1?"⬆️ Bullish":macdScore===-2?"🔻 Cruzamento Baixa":macdScore===-1?"⬇️ Bearish":"↔️ Neutro"}`});
+    if(!obAvail) sources.push({i:"ℹ️",t:"Livro aguardando amostras — confiança aumentará em breve"});
+    if(lightConflict) sources.push({i:"💡",t:"Técnico e livro divergem — aguarde alinhamento"});
+  } else {
+    sources.push({i:"📊",t:`Técnico: ${techScore>0?"COMPRA":"VENDA"} (score ${techScore>0?"+":""}${techScore})`});
+    if(obScore!==null) sources.push({i:"📖",t:`Livro: ${obScore>0?"COMPRA":"VENDA"} (score ${obScore>0?"+":""}${obScore})`});
+    sources.push({i:"⏳",t:"Aguarde os dois sinais concordarem antes de operar"});
+  }
+  return{verdict,color,bg,emoji,desc,finalScore:weightedScore,techScore,obScore,trendScore,macdScore,
+    conflict:seriousConflict||lightConflict,seriousConflict,lightConflict,confidence,sources,pulse};
+}
 
 function renderExchangeButtons(coinId){
   const urls=EXCHANGE_URLS[coinId];
@@ -753,6 +831,29 @@ function renderTab(){
   if(dec2) checkVerdictChange(selected, dec2.verdict, coin);
 
   const dec=renderDecisionHTML(coin);
+  const unified=calcUnifiedVerdict(coin);
+  const unifiedHTML=unified?`<div style="background:${unified.bg};border:2px solid ${unified.color};border-radius:14px;padding:16px;margin-bottom:14px;${unified.pulse?"animation:glowpulse 1.5s infinite":""}">
+    <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px">
+      <span style="font-size:34px;line-height:1">${unified.emoji}</span>
+      <div style="flex:1">
+        <div style="color:var(--muted);font-size:9px;letter-spacing:2px;margin-bottom:3px">VEREDICTO FINAL — ${unified.obScore!==null?"4":"3"} ANÁLISES COMBINADAS</div>
+        <div style="color:${unified.color};font-size:15px;font-weight:700;line-height:1.3">${unified.verdict}</div>
+        <div style="color:${unified.color};font-size:10px;margin-top:4px;opacity:.85">${unified.desc}</div>
+      </div>
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-bottom:4px">
+        <span>CONFIANÇA DO SINAL</span>
+        <span style="color:${unified.confidence>=75?unified.color:"var(--o)"};font-weight:700">${unified.confidence}%</span>
+      </div>
+      <div style="height:8px;background:var(--bg3);border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${unified.confidence}%;background:${unified.confidence>=75?unified.color:unified.confidence>=50?"#ffd700":"#ff8844"};border-radius:4px;transition:width .5s"></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;border-top:1px solid ${unified.color}20;padding-top:10px">
+      ${unified.sources.map(s=>`<div style="display:flex;gap:8px;font-size:11px"><span style="flex-shrink:0">${s.i}</span><span style="color:var(--text2);line-height:1.4">${s.t}</span></div>`).join("")}
+    </div>
+  </div>`:"";
   const macdHtml=renderMACD(coin.spark);
   const fib=calcFibonacci(coin.spark);
   const fibHtml=renderFibonacci(fib, coin.price);
@@ -780,9 +881,9 @@ function renderTab(){
       const l=Math.min(o,c2)*(1-Math.random()*0.003);
       candles.push({o,c:c2,h,l});
     }
-    el.innerHTML=priceHead+renderExchangeButtons(selected)+dec+candlestickChart(candles,fib)+macdHtml+stpHtml+fibHtml+inds;
+    el.innerHTML=priceHead+renderExchangeButtons(selected)+unifiedHTML+dec+candlestickChart(candles,fib)+macdHtml+stpHtml+fibHtml+inds;
   }else{
-    el.innerHTML=priceHead+renderExchangeButtons(selected)+dec+macdHtml+stpHtml+fibHtml+`<div class="card" style="margin-bottom:12px"><div class="slabel">PADRÕES — ${coin.sym}</div>${coin.sigs.length>0?coin.sigs.map(sigBadge).join(""):'<div style="color:var(--muted);font-size:13px;padding:20px 0;text-align:center">Nenhum padrão no momento.</div>'}</div><div class="card"><div class="slabel">INDICADORES</div>${indRow("RSI (14)",coin.rsi?.toFixed(1)||"—",coin.rsi<30?"var(--g)":coin.rsi>70?"var(--r)":"var(--text)",coin.rsi,100)}${indRow("Média 7h",coin.sma7?`$${coin.sma7.toLocaleString("en-US",{maximumFractionDigits:4})}`:"—","var(--b)")}${indRow("Média 21h",coin.sma21?`$${coin.sma21.toLocaleString("en-US",{maximumFractionDigits:4})}`:"—","var(--o)")}${indRow("Tendência",coin.sma7&&coin.sma21?(coin.sma7>coin.sma21?"ALTA ▲":"BAIXA ▼"):"—",coin.sma7&&coin.sma21?(coin.sma7>coin.sma21?"var(--g)":"var(--r)"):"var(--muted)")}</div>`;
+    el.innerHTML=priceHead+renderExchangeButtons(selected)+unifiedHTML+dec+macdHtml+stpHtml+fibHtml+`<div class="card" style="margin-bottom:12px"><div class="slabel">PADRÕES — ${coin.sym}</div>${coin.sigs.length>0?coin.sigs.map(sigBadge).join(""):'<div style="color:var(--muted);font-size:13px;padding:20px 0;text-align:center">Nenhum padrão no momento.</div>'}</div><div class="card"><div class="slabel">INDICADORES</div>${indRow("RSI (14)",coin.rsi?.toFixed(1)||"—",coin.rsi<30?"var(--g)":coin.rsi>70?"var(--r)":"var(--text)",coin.rsi,100)}${indRow("Média 7h",coin.sma7?`$${coin.sma7.toLocaleString("en-US",{maximumFractionDigits:4})}`:"—","var(--b)")}${indRow("Média 21h",coin.sma21?`$${coin.sma21.toLocaleString("en-US",{maximumFractionDigits:4})}`:"—","var(--o)")}${indRow("Tendência",coin.sma7&&coin.sma21?(coin.sma7>coin.sma21?"ALTA ▲":"BAIXA ▼"):"—",coin.sma7&&coin.sma21?(coin.sma7>coin.sma21?"var(--g)":"var(--r)"):"var(--muted)")}</div>`;
   }
 }
 
