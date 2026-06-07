@@ -1179,7 +1179,6 @@ function simulateOrderBook(coinId){
   if(!coin||!coin.price) return;
   const price=coin.price;
   const rsiVal=coin.rsi||50;
-  // Simula pressão baseado nos indicadores
   const buyBias=rsiVal<40?0.65:rsiVal>60?0.35:0.5;
   const bids=[],asks=[];
   for(let i=0;i<10;i++){
@@ -1195,7 +1194,8 @@ function simulateOrderBook(coinId){
   obData.bids=bids; obData.asks=asks;
   const a=analyzeOrderBook(bids,asks);
   if(a){ pushSnapshot(bids,asks,a.obScore); updateStableVerdict(a); }
-  renderOBPanel("simulated");
+  // Só renderiza se analyzeOrderBook retornou dados válidos
+  if(a&&obData.bids.length&&obData.asks.length) renderOBPanel("live");
 }
 
 function startRESTFallback(coinId){
@@ -1523,19 +1523,7 @@ function renderOBPanel(status){
     <div style="margin-top:8px;font-size:9px;color:var(--muted);border-top:1px solid ${displayColor}20;padding-top:6px">⚠ Livro completo da Binance (100 níveis) + indicadores. Não é conselho financeiro.</div>
   </div>`;
 
-  // ── Cruzar Order Book com indicadores técnicos ──
-  const coin=coinsData[selected];
-  let obScore=0;
-  const obReasons=[];
 
-  // 1. Ratio de ordens
-  if(ratio>1.5){obScore+=3;obReasons.push({i:"🟢",t:`${buyPct.toFixed(0)}% das ordens são de COMPRA — compradores dominando fortemente`})}
-  else if(ratio>1.2){obScore+=2;obReasons.push({i:"🟢",t:`${buyPct.toFixed(0)}% das ordens são de COMPRA — boa dominância compradora`});}
-  else if(ratio>1.05){obScore+=1;obReasons.push({i:"✅",t:`${buyPct.toFixed(0)}% das ordens são de COMPRA — leve vantagem compradora`});}
-  else if(ratio<0.67){obScore-=3;obReasons.push({i:"🔴",t:`${sellPct.toFixed(0)}% das ordens são de VENDA — vendedores dominando fortemente`});}
-  else if(ratio<0.83){obScore-=2;obReasons.push({i:"🔴",t:`${sellPct.toFixed(0)}% das ordens são de VENDA — boa dominância vendedora`});}
-  else if(ratio<0.95){obScore-=1;obReasons.push({i:"⚠️",t:`${sellPct.toFixed(0)}% das ordens são de VENDA — leve vantagem vendedora`});}
-  else{obReasons.push({i:"⚖️",t:`Ordens equilibradas (${buyPct.toFixed(0)}% compra / ${sellPct.toFixed(0)}% venda)`});}
 
   // 2. Muro de compra forte (suporte)
   const muralBuyPct=(bigBid.q/bids.reduce((s,b)=>s+b.q,0))*100;
