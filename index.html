@@ -1273,7 +1273,6 @@ function simulateOrderBook(coinId){
   if(!coin||!coin.price) return;
   const price=coin.price;
   const rsiVal=coin.rsi||50;
-  // Simula pressão baseado nos indicadores
   const buyBias=rsiVal<40?0.65:rsiVal>60?0.35:0.5;
   const bids=[],asks=[];
   for(let i=0;i<10;i++){
@@ -1289,7 +1288,8 @@ function simulateOrderBook(coinId){
   obData.bids=bids; obData.asks=asks;
   const a=analyzeOrderBook(bids,asks);
   if(a){ pushSnapshot(bids,asks,a.obScore); updateStableVerdict(a); }
-  renderOBPanel("simulated");
+  // Usa "live" para garantir que analyzeOrderBook já calculou ratio
+  if(obData.bids.length&&obData.asks.length) renderOBPanel("live");
 }
 
 function startRESTFallback(coinId){
@@ -1616,67 +1616,7 @@ function renderOBPanel(status){
     </div>
     <div style="margin-top:8px;font-size:9px;color:var(--muted);border-top:1px solid ${displayColor}20;padding-top:6px">⚠ Livro completo da Binance (100 níveis) + indicadores. Não é conselho financeiro.</div>
   </div>`;
-
-  // ── Cruzar Order Book com indicadores técnicos ──
-  const coin=coinsData[selected];
-  let obScore=0;
-  const obReasons=[];
-
-  // 1. Ratio de ordens
-  if(ratio>1.5){obScore+=3;obReasons.push({i:"🟢",t:`${buyPct.toFixed(0)}% das ordens são de COMPRA — compradores dominando fortemente`})}
-  else if(ratio>1.2){obScore+=2;obReasons.push({i:"🟢",t:`${buyPct.toFixed(0)}% das ordens são de COMPRA — boa dominância compradora`});}
-  else if(ratio>1.05){obScore+=1;obReasons.push({i:"✅",t:`${buyPct.toFixed(0)}% das ordens são de COMPRA — leve vantagem compradora`});}
-  else if(ratio<0.67){obScore-=3;obReasons.push({i:"🔴",t:`${sellPct.toFixed(0)}% das ordens são de VENDA — vendedores dominando fortemente`});}
-  else if(ratio<0.83){obScore-=2;obReasons.push({i:"🔴",t:`${sellPct.toFixed(0)}% das ordens são de VENDA — boa dominância vendedora`});}
-  else if(ratio<0.95){obScore-=1;obReasons.push({i:"⚠️",t:`${sellPct.toFixed(0)}% das ordens são de VENDA — leve vantagem vendedora`});}
-  else{obReasons.push({i:"⚖️",t:`Ordens equilibradas (${buyPct.toFixed(0)}% compra / ${sellPct.toFixed(0)}% venda)`});}
-
-  // 2. Muro de compra forte (suporte)
-  const muralBuyPct=(bigBid.q/bids.reduce((s,b)=>s+b.q,0))*100;
-  if(muralBuyPct>25){obScore+=1;obReasons.push({i:"🧱",t:`Muro de COMPRA em $${bigBid.p.toLocaleString("en-US",{maximumFractionDigits:4})} — grande suporte de compradores nesse preço`});}
-
-  // 3. Muro de venda forte (resistência)
-  const muralSellPct=(bigAsk.q/asks.reduce((s,a)=>s+a.q,0))*100;
-  if(muralSellPct>25){obScore-=1;obReasons.push({i:"🧱",t:`Muro de VENDA em $${bigAsk.p.toLocaleString("en-US",{maximumFractionDigits:4})} — grande resistência de vendedores nesse preço`});}
-
-  // 4. Cruzar com RSI
-  if(coin?.rsi!=null){
-    if(coin.rsi<35&&obScore>0){obScore+=1;obReasons.push({i:"✅",t:`RSI baixo (${coin.rsi.toFixed(1)}) + pressão de compra = confirmação de reversão de alta`});}
-    if(coin.rsi>65&&obScore<0){obScore-=1;obReasons.push({i:"⚠️",t:`RSI alto (${coin.rsi.toFixed(1)}) + pressão de venda = confirmação de reversão de baixa`});}
-  }
-
-  // 5. Cruzar com tendência SMA
-  if(coin?.sma7&&coin?.sma21){
-    if(coin.sma7>coin.sma21&&obScore>0){obScore+=1;obReasons.push({i:"✅",t:"Tendência de alta + pressão de compra = sinal confirmado"});}
-    if(coin.sma7<coin.sma21&&obScore<0){obScore-=1;obReasons.push({i:"⚠️",t:"Tendência de baixa + pressão de venda = sinal confirmado"});}
-  }
-
-  // ── Veredicto final ──
-  let verdict,vcolor,vbg,vemoji,vdesc;
-  if(obScore>=4){
-    verdict="🚀 HORA DE COMPRAR";vcolor="#00ff87";vbg="#062b15";vemoji="🚀";
-    vdesc="Livro de ordens + indicadores técnicos alinhados: forte sinal de COMPRA agora.";
-  } else if(obScore>=2){
-    verdict="✅ BOA HORA PARA COMPRAR";vcolor="#00dd77";vbg="#0d2b1e";vemoji="🟢";
-    vdesc="Pressão de compra confirmada pelos indicadores. Boa janela de entrada.";
-  } else if(obScore>=1){
-    verdict="👀 POSSÍVEL HORA DE COMPRAR";vcolor="#ffd700";vbg="#2a2000";vemoji="🟡";
-    vdesc="Sinais levemente favoráveis para compra, mas aguarde mais confirmação.";
-  } else if(obScore===0){
-    verdict="⏳ AGUARDAR — SEM SINAL CLARO";vcolor="#888";vbg="#1a1a1a";vemoji="⚪";
-    vdesc="Ordens equilibradas sem direção definida. Não é hora de comprar nem vender.";
-  } else if(obScore>=-2){
-    verdict="⚠️ NÃO COMPRAR AGORA";vcolor="#ff8844";vbg="#2b1500";vemoji="🔴";
-    vdesc="Pressão de venda detectada. Evite entrar agora — aguarde o mercado estabilizar.";
-  } else {
-    verdict="🛑 HORA DE VENDER / NÃO COMPRAR";vcolor="#ff4d4d";vbg="#2b0d0d";vemoji="🔴";
-    vdesc="Forte pressão de venda confirmada pelos indicadores. Sinal claro de saída ou espera.";
-  }
-
-  return{verdict,vcolor,vbg,vemoji,vdesc,obScore,obReasons,
-    buyPct,sellPct,ratio,totalBuy,totalSell,bigBid,bigAsk,spread,bids,asks};
 }
-
 
 // ── EVENTS ──
 document.getElementById("themeBtn").onclick=()=>{darkMode=!darkMode;document.body.classList.toggle("light",!darkMode);};
