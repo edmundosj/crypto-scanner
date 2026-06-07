@@ -613,6 +613,16 @@ function svgChart(data,s7v,s21v){
   </div>`;
 }
 
+
+// ── FORMATAÇÃO INTELIGENTE DE PREÇO ──
+function fmtPrice(p){
+  if(!p||p===0) return "0";
+  if(p>=1000) return p.toLocaleString("en-US",{maximumFractionDigits:2});
+  if(p>=1) return p.toLocaleString("en-US",{maximumFractionDigits:4});
+  if(p>=0.01) return p.toLocaleString("en-US",{maximumFractionDigits:6});
+  if(p>=0.0001) return p.toLocaleString("en-US",{maximumFractionDigits:8});
+  return p.toExponential(4);
+}
 // ── FETCH — CoinGecko single call ──
 async function fetchAll(){
   if(Object.keys(coinsData).length===0){
@@ -695,7 +705,7 @@ function renderCoinList(){
       html+=`<div class="cc${c.id===selected?" sel":""}" onclick="selectCoin('${c.id}')">
         <div class="crow">
           <div><span class="csym">${d.sym}</span><span class="cname">${d.name}</span>${hasAlert?'<span class="adot"></span>':''}</div>
-          <div><div class="cprice">$${d.price.toLocaleString("en-US",{maximumFractionDigits:4})}</div><div class="cchg ${pos?"pos":"neg"}">${pos?"▲":"▼"} ${Math.abs(d.chg).toFixed(2)}%</div></div>
+          <div><div class="cprice">$${fmtPrice(d.price)}</div><div class="cchg ${pos?"pos":"neg"}">${pos?"▲":"▼"} ${Math.abs(d.chg).toFixed(2)}%</div></div>
         </div>
         ${dec?`<div class="cverd" style="color:${dec.color}">${dec.emoji} ${dec.verdict}</div>`:""}
       </div>`;
@@ -751,7 +761,7 @@ function renderTab(){
   const pos=coin.chg>=0;
   const priceHead=`<div class="phead">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-      <span class="pbig">$${coin.price.toLocaleString("en-US",{maximumFractionDigits:4})}</span>
+      <span class="pbig">$${fmtPrice(coin.price)}</span>
       <span class="pchg ${pos?"pos":"neg"}">${pos?"▲":"▼"} ${Math.abs(coin.chg).toFixed(2)}%</span>
     </div>
     <div class="pmeta">${coin.name} · Vol: $${(coin.vol/1e9).toFixed(2)}B · MCap: $${(coin.mcap/1e9).toFixed(1)}B</div>
@@ -802,7 +812,7 @@ function renderTop20(){
     return`<div class="t20row" onclick="selectAndGo('${c.id}','${c.sym}','${c.name}')">
       <span class="t20rank">#${i+1}</span>
       <div><div class="t20sym">${c.sym}</div><div class="t20n">${c.name}</div></div>
-      <div class="t20p" style="text-align:right">$${c.price.toLocaleString("en-US",{maximumFractionDigits:4})}</div>
+      <div class="t20p" style="text-align:right">$${fmtPrice(c.price)}</div>
       <div style="text-align:right;font-size:10px" class="${pos?"pos":"neg"}">${pos?"▲":"▼"} ${Math.abs(c.chg).toFixed(2)}%</div>
     </div>`;
   }).join("");
