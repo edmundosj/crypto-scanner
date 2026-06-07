@@ -624,10 +624,10 @@ async function fetchAll(){
     if(!r.ok)throw new Error("CoinGecko "+r.status);
     const data=await r.json();
     for(const m of data){
-      const wl=WATCHLIST.find(c=>c.id===m.id);
-      if(!wl)continue;
       const sp=m.sparkline_in_7d?.price||[];
       const r2=rsi(sp),s7=sma(sp,7),s21=sma(sp,21);
+      // Encontra a primeira ocorrência na watchlist para sym/name
+      const wl=WATCHLIST.find(c=>c.id===m.id)||{sym:m.symbol?.toUpperCase()||m.id,name:m.name||m.id};
       coinsData[m.id]={
         id:m.id,sym:wl.sym,name:wl.name,
         price:m.current_price,chg:m.price_change_percentage_24h||0,
